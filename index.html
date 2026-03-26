@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenDomeStudy | 100% Free Learning</title>
+    <style>
+        /* Modern Educational Palette */
+        :root {
+            --primary-blue: #2541B2;
+            --accent-orange: #FF8C00;
+            --secondary-teal: #3BCEAC;
+            --bg-light: #F7F7F7;
+            --text-dark: #1A1A1A;
+            --white: #FFFFFF;
+        }
+
+        body { 
+            background-color: var(--bg-light); 
+            color: var(--text-dark); 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            line-height: 1.6;
+        }
+
+        /* Navigation Bar */
+        nav { 
+            background-color: var(--primary-blue); 
+            padding: 1rem 5%; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--white);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        nav h1 { margin: 0; font-size: 1.5rem; letter-spacing: 1px; }
+
+        /* Hero Section */
+        .hero { 
+            padding: 80px 20px; 
+            text-align: center;
+            background: linear-gradient(180deg, var(--white) 0%, var(--bg-light) 100%);
+        }
+
+        .hero h2 { 
+            font-size: 2.5rem; 
+            color: var(--primary-blue); 
+            margin-bottom: 10px;
+        }
+
+        .hero p { font-size: 1.2rem; color: #555; max-width: 600px; margin: 0 auto 30px; }
+
+        /* The "Fun" Button */
+        .btn { 
+            background-color: var(--accent-orange); 
+            color: var(--white); 
+            padding: 18px 40px; 
+            text-decoration: none; 
+            border-radius: 50px; 
+            font-weight: bold; 
+            font-size: 1.1rem;
+            transition: transform 0.2s, background-color 0.2s;
+            display: inline-block;
+            box-shadow: 0 4px 15px rgba(255, 140, 0, 0.3);
+        }
+
+        .btn:hover { 
+            background-color: #e67e00; 
+            transform: translateY(-3px);
+        }
+
+        /* Logo Area */
+        .logo-img { 
+            max-width: 180px; 
+            margin-bottom: 25px; 
+            border-radius: 20px; /* Slight rounding for a 2026 look */
+        }
+
+        /* Subjects Section */
+        .subjects { padding: 50px 5%; display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .subject-card { 
+            background: var(--white);
+            padding: 20px;
+            border-bottom: 5px solid var(--secondary-teal);
+            border-radius: 10px;
+            width: 200px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <h1>OpenDomeStudy</h1>
+        <div>Free Forever</div>
+    </nav>
+
+    <div class="hero">
+        <img src="logo.png" alt="OpenDomeStudy Logo" class="logo-img">
+        <h2>Knowledge Off The Dome.</h2>
+        <p>The world's first 100% free study hub with zero purchases, zero ads, and zero catch.</p>
+        <a href="#subjects" class="btn">Explore Subjects</a>
+    </div>
+
+    <div id="subjects" class="subjects">
+        <div class="subject-card"><h3>Math</h3></div>
+        <div class="subject-card"><h3>Science</h3></div>
+        <div class="subject-card"><h3>History</h3></div>
+        <div class="subject-card"><h3>Coding</h3></div>
+    </div>
+
+</body>
+</html>
