@@ -1,0 +1,39 @@
+<body>
+    <nav>
+        <h1>OpenDomeStudy</h1>
+        <div>100% Free AI Lab</div>
+    </nav>
+
+    <div class="hero">
+        <img src="logo.png" alt="OpenDomeStudy Logo" class="logo-img">
+        <h2>Open the Dome. Level Up.</h2>
+        
+        <div id="drop-zone" style="border: 2px dashed var(--primary-blue); padding: 40px; margin: 20px auto; max-width: 600px; border-radius: 20px; background: white;">
+            <p>Drag & Drop your Lecture Notes (PDF/Text) here</p>
+            <input type="file" id="fileInput" hidden>
+            <button onclick="document.getElementById('fileInput').click()" class="btn" style="padding: 10px 20px; font-size: 0.9rem;">Select File</button>
+        </div>
+
+        <div id="ai-options" style="display:none; margin-top: 20px;">
+            <button class="btn" style="background: var(--secondary-teal);">✨ Generate Study Guide</button>
+            <button class="btn" style="background: var(--secondary-teal);">🗂️ Make Flashcards</button>
+            <button class="btn" style="background: var(--secondary-teal);">📝 Take Quiz</button>
+            <button class="btn" style="background: #6200EA;">👨‍🏫 Whiteboard Walkthrough</button>
+        </div>
+    </div>
+
+    <div id="whiteboard-container" style="display:none; height: 500px; width: 90%; margin: 0 auto; border: 3px solid #1A1A1A; border-radius: 15px;">
+        <iframe src="https://excalidraw.com" width="100%" height="100%" style="border:none;"></iframe>
+    </div>
+
+    <script>
+        // Basic Logic to show options after upload
+        const fileInput = document.getElementById('fileInput');
+        fileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                alert("Notes imported! Choose an AI tool below.");
+                document.getElementById('ai-options').style.display = 'block';
+            }
+        });
+    </script>
+</body>
