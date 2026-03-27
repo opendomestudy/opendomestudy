@@ -1,0 +1,677 @@
+import os
+import jwt
+import datetime
+import bcrypt as _bcrypt
+from fastapi import HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+SECRET_KEY = os.environ.get("JWT_SECRET", "opendomestudy-secret-key-change-in-prod")
+ALGORITHM = "HS256"
+TOKEN_EXPIRE_HOURS = 72
+security = HTTPBearer()
+def hash_password(password: str) -> str:
+    return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
+def verify_password(password: str, password_hash: str) -> bool:
+    return _bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+def create_token(user_id: int, email: str) -> str:
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=TOKEN_EXPIRE_HOURS),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+def decode_token(token: str) -> dict:
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    return decode_token(credentials.credentials)
+
+content_generator.py
+/home/ubuntu/opendomestudy/opendomestudy-backend/app/content_generator.py
+
++380
+Added
+"""
+Content generation engine that creates study materials from raw text.
+Generates tutor notes, quizzes, flashcards, and mind map data algorithmically.
+"""
+import re
+import random
+from typing import Any
+def _split_into_sections(text: str) -> list[dict[str, str]]:
+    """Split text into logical sections based on headings, blank lines, or paragraphs."""
+    lines = text.strip().split("\n")
+    sections: list[dict[str, str]] = []
+    current_title = "Overview"
+    current_content: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        # Detect headings: lines that are short, capitalized, or end with ':'
+        is_heading = (
+            (len(stripped) < 80 and stripped.isupper() and len(stripped) > 2) or
+            (stripped.endswith(":") and len(stripped) < 100) or
+            (stripped.startswith("#")) or
+            (stripped.startswith("Chapter ") or stripped.startswith("Section ") or stripped.startswith("Part "))
+        )
+        if is_heading and current_content:
+            content_text = "\n".join(current_content).strip()
+            if content_text:
+                sections.append({"title": current_title, "content": content_text})
+            current_title = stripped.lstrip("#").strip().rstrip(":")
+            current_content = []
+        elif stripped:
+            current_content.append(stripped)
+    # Add last section
+    if current_content:
+        content_text = "\n".join(current_content).strip()
+        if content_text:
+            sections.append({"title": current_title, "content": content_text})
+    # If no sections were created, make one from the whole text
+    if not sections:
+        sections.append({"title": "Overview", "content": text.strip()})
+    return sections
+def _extract_sentences(text: str) -> list[str]:
+    """Extract clean sentences from text."""
+    # Split on sentence-ending punctuation
+    raw = re.split(r'(?<=[.!?])\s+', text)
+    sentences = []
+    for s in raw:
+        s = s.strip()
+        if len(s) > 15 and len(s) < 500:
+            sentences.append(s)
+    return sentences
+def _extract_key_terms(text: str) -> list[str]:
+    """Extract important terms/phrases from text."""
+    # Find capitalized phrases (likely proper nouns / key concepts)
+    terms = set()
+    # Multi-word capitalized phrases
+    for match in re.finditer(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', text):
+        terms.add(match.group())
+    # Words in quotes
+    for match in re.finditer(r'"([^"]+)"', text):
+        if len(match.group(1)) < 60:
+            terms.add(match.group(1))
+    # Bold/emphasized terms (markdown)
+    for match in re.finditer(r'\*\*([^*]+)\*\*', text):
+        terms.add(match.group(1))
+    for match in re.finditer(r'\*([^*]+)\*', text):
+        terms.add(match.group(1))
+    # Words after "called", "known as", "defined as", "refers to"
+    for match in re.finditer(r'(?:called|known as|defined as|refers to|termed)\s+([A-Za-z\s]+?)(?:\.|,|\s+is|\s+are|\s+was)', text, re.IGNORECASE):
+        term = match.group(1).strip()
+        if len(term) < 50:
+            terms.add(term)
+    return list(terms)[:20]
+def generate_tutor_notes(text: str, title: str) -> dict[str, Any]:
+    """Generate structured tutor notes explaining content with where/when/why/how."""
+    sections = _split_into_sections(text)
+    notes: list[dict[str, Any]] = []
+    for section in sections:
+        sentences = _extract_sentences(section["content"])
+        key_terms = _extract_key_terms(section["content"])
+        # Build explanation sections
+        explanation: dict[str, str] = {}
+        # What - summary of the content
+        if sentences:
+            explanation["what"] = sentences[0] if len(sentences) > 0 else section["content"][:200]
+        # Where - look for location/context clues
+        where_sentences = [s for s in sentences if any(w in s.lower() for w in
+            ["where", "location", "place", "region", "country", "city", "area", "in the", "at the", "continent"])]
+        if where_sentences:
+            explanation["where"] = where_sentences[0]
+        # When - look for time references
+        when_sentences = [s for s in sentences if any(w in s.lower() for w in
+            ["when", "year", "century", "date", "period", "era", "during", "after", "before", "in 1", "in 2", "age of"])]
+        if when_sentences:
+            explanation["when"] = when_sentences[0]
+        # Why - look for causal explanations
+        why_sentences = [s for s in sentences if any(w in s.lower() for w in
+            ["because", "reason", "why", "cause", "result", "purpose", "in order to", "due to", "led to", "therefore"])]
+        if why_sentences:
+            explanation["why"] = why_sentences[0]
+        # How - look for process/method descriptions
+        how_sentences = [s for s in sentences if any(w in s.lower() for w in
+            ["how", "method", "process", "step", "procedure", "through", "by using", "mechanism", "technique", "approach"])]
+        if how_sentences:
+            explanation["how"] = how_sentences[0]
+        # Key points - remaining important sentences
+        key_points = [s for s in sentences[:8] if s not in [
+            explanation.get("what", ""),
+            explanation.get("where", ""),
+            explanation.get("when", ""),
+            explanation.get("why", ""),
+            explanation.get("how", ""),
+        ]]
+        notes.append({
+            "title": section["title"],
+            "explanation": explanation,
+            "key_points": key_points[:5],
+            "key_terms": key_terms[:8],
+            "full_content": section["content"],
+        })
+    return {
+        "title": title,
+        "sections": notes,
+        "total_sections": len(notes),
+    }
+def generate_quiz(text: str, title: str) -> dict[str, Any]:
+    """Generate quiz questions from the text."""
+    sentences = _extract_sentences(text)
+    questions: list[dict[str, Any]] = []
+    if not sentences:
+        return {"title": title, "questions": [], "total_questions": 0}
+    # Generate fill-in-the-blank questions
+    for sentence in sentences:
+        words = sentence.split()
+        if len(words) < 5:
+            continue
+        # Find a meaningful word to blank out (not common words)
+        common_words = {"the", "a", "an", "is", "are", "was", "were", "be", "been",
+                       "being", "have", "has", "had", "do", "does", "did", "will",
+                       "would", "could", "should", "may", "might", "can", "shall",
+                       "to", "of", "in", "for", "on", "with", "at", "by", "from",
+                       "it", "its", "this", "that", "these", "those", "and", "or",
+                       "but", "not", "no", "if", "then", "than", "so", "as", "up"}
+        content_words = [(i, w) for i, w in enumerate(words)
+                        if w.lower().strip(".,;:!?\"'()") not in common_words
+                        and len(w.strip(".,;:!?\"'()")) > 3]
+        if not content_words:
+            continue
+        idx, answer_word = random.choice(content_words)
+        clean_answer = answer_word.strip(".,;:!?\"'()")
+        # Create the blank version
+        blank_sentence = " ".join(
+            "________" if i == idx else w for i, w in enumerate(words)
+        )
+        # Generate wrong answers from other content words in the text
+        all_content = set()
+        for s in sentences:
+            for w in s.split():
+                cleaned = w.strip(".,;:!?\"'()")
+                if cleaned.lower() not in common_words and len(cleaned) > 3:
+                    all_content.add(cleaned)
+        wrong_answers = [w for w in all_content if w.lower() != clean_answer.lower()]
+        random.shuffle(wrong_answers)
+        wrong_answers = wrong_answers[:3]
+        if len(wrong_answers) < 2:
+            continue
+        options = wrong_answers[:3] + [clean_answer]
+        random.shuffle(options)
+        questions.append({
+            "type": "fill_blank",
+            "question": blank_sentence,
+            "options": options,
+            "correct_answer": clean_answer,
+            "explanation": sentence,
+        })
+        if len(questions) >= 15:
+            break
+    # Generate true/false questions
+    for sentence in sentences[::2]:
+        if len(questions) >= 20:
+            break
+        if len(sentence.split()) < 6:
+            continue
+        questions.append({
+            "type": "true_false",
+            "question": f'True or False: "{sentence}"',
+            "options": ["True", "False"],
+            "correct_answer": "True",
+            "explanation": f"This statement is directly from the study material: {sentence}",
+        })
+        if len(questions) >= 20:
+            break
+    random.shuffle(questions)
+    return {
+        "title": title,
+        "questions": questions[:20],
+        "total_questions": len(questions[:20]),
+    }
+def generate_flashcards(text: str, title: str) -> dict[str, Any]:
+    """Generate flashcards from the text."""
+    sections = _split_into_sections(text)
+    cards: list[dict[str, str]] = []
+    for section in sections:
+        sentences = _extract_sentences(section["content"])
+        key_terms = _extract_key_terms(section["content"])
+        # Create term-definition flashcards
+        for term in key_terms:
+            # Find the sentence containing this term
+            for sentence in sentences:
+                if term.lower() in sentence.lower():
+                    cards.append({
+                        "front": f"What is {term}?",
+                        "back": sentence,
+                        "category": section["title"],
+                    })
+                    break
+        # Create question-answer flashcards from sentences
+        for sentence in sentences:
+            if len(sentence.split()) < 6:
+                continue
+            words = sentence.split()
+            # Create a question from the first part
+            if len(words) > 8:
+                half = len(words) // 2
+                front = " ".join(words[:half]) + "..."
+                cards.append({
+                    "front": f"Complete this: {front}",
+                    "back": sentence,
+                    "category": section["title"],
+                })
+        # Key concept cards
+        if sentences:
+            cards.append({
+                "front": f"What are the key points about {section['title']}?",
+                "back": " ".join(sentences[:3]),
+                "category": section["title"],
+            })
+    # Remove duplicates and limit
+    seen = set()
+    unique_cards = []
+    for card in cards:
+        key = card["front"]
+        if key not in seen:
+            seen.add(key)
+            unique_cards.append(card)
+    return {
+        "title": title,
+        "cards": unique_cards[:30],
+        "total_cards": len(unique_cards[:30]),
+    }
+def generate_mindmap(text: str, title: str) -> dict[str, Any]:
+    """Generate mind map data from the text."""
+    sections = _split_into_sections(text)
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, str]] = []
+    # Root node
+    root_id = "root"
+    nodes.append({
+        "id": root_id,
+        "label": title,
+        "type": "root",
+    })
+    for i, section in enumerate(sections):
+        section_id = f"section_{i}"
+        nodes.append({
+            "id": section_id,
+            "label": section["title"],
+            "type": "section",
+        })
+        edges.append({
+            "source": root_id,
+            "target": section_id,
+        })
+        # Extract key concepts for this section
+        key_terms = _extract_key_terms(section["content"])
+        sentences = _extract_sentences(section["content"])
+        # Add key term nodes
+        for j, term in enumerate(key_terms[:5]):
+            term_id = f"term_{i}_{j}"
+            # Find context sentence
+            context = ""
+            for s in sentences:
+                if term.lower() in s.lower():
+                    context = s
+                    break
+            nodes.append({
+                "id": term_id,
+                "label": term,
+                "type": "concept",
+                "detail": context,
+            })
+            edges.append({
+                "source": section_id,
+                "target": term_id,
+            })
+        # Add key point nodes (from sentences)
+        for j, sentence in enumerate(sentences[:3]):
+            point_id = f"point_{i}_{j}"
+            # Shorten for display
+            short = sentence[:60] + "..." if len(sentence) > 60 else sentence
+            nodes.append({
+                "id": point_id,
+                "label": short,
+                "type": "detail",
+                "detail": sentence,
+            })
+            edges.append({
+                "source": section_id,
+                "target": point_id,
+            })
+    return {
+        "title": title,
+        "nodes": nodes,
+        "edges": edges,
+        "total_nodes": len(nodes),
+    }
+
+database.py
+/home/ubuntu/opendomestudy/opendomestudy-backend/app/database.py
+
++71
+Added
+import sqlite3
+import os
+from contextlib import contextmanager
+# Use /data for persistent volume in production, local file in dev
+DB_PATH = os.environ.get("DB_PATH", "/data/app.db") if os.path.exists("/data") else os.environ.get("DB_PATH", "app.db")
+def get_db_path():
+    return DB_PATH
+def init_db():
+    conn = sqlite3.connect(get_db_path())
+    conn.execute("PRAGMA journal_mode=WAL")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lessons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            raw_text TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            lesson_id INTEGER NOT NULL,
+            mode TEXT NOT NULL,
+            score REAL DEFAULT 0,
+            completed INTEGER DEFAULT 0,
+            data TEXT DEFAULT '{}',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (lesson_id) REFERENCES lessons(id) ON DELETE CASCADE,
+            UNIQUE(user_id, lesson_id, mode)
+        )
+    """)
+    conn.commit()
+    conn.close()
+@contextmanager
+def get_db():
+    conn = sqlite3.connect(get_db_path())
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+main.py
+/home/ubuntu/opendomestudy/opendomestudy-backend/app/main.py
+
++306
+-3
+from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+import psycopg
+from pydantic import BaseModel
+import pdfplumber
+import io
+app = FastAPI()
+from app.database import init_db, get_db
+from app.auth import (
+    hash_password, verify_password, create_token, get_current_user
+)
+from app.content_generator import (
+    generate_tutor_notes, generate_quiz, generate_flashcards, generate_mindmap
+)
+app = FastAPI(title="OpenDomeStudy API")
+# Disable CORS. Do not remove this for full-stack development.
+app.add_middleware(
+    CORSMiddleware,
+    allow_headers=["*"],  # Allows all headers
+)
+@app.on_event("startup")
+def startup():
+    init_db()
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+# ─── Auth Models ───────────────────────────────────────────────
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    display_name: str
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+# ─── Auth Endpoints ───────────────────────────────────────────
+@app.post("/auth/register")
+async def register(req: RegisterRequest):
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    with get_db() as db:
+        existing = db.execute("SELECT id FROM users WHERE email = ?", (req.email,)).fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        password_hash = hash_password(req.password)
+        cursor = db.execute(
+            "INSERT INTO users (email, password_hash, display_name) VALUES (?, ?, ?)",
+            (req.email, password_hash, req.display_name)
+        )
+        user_id = cursor.lastrowid
+    token = create_token(user_id, req.email)
+    return {
+        "token": token,
+        "user": {"id": user_id, "email": req.email, "display_name": req.display_name}
+    }
+@app.post("/auth/login")
+async def login(req: LoginRequest):
+    with get_db() as db:
+        user = db.execute("SELECT * FROM users WHERE email = ?", (req.email,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        if not verify_password(req.password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_token(user["id"], user["email"])
+    return {
+        "token": token,
+        "user": {"id": user["id"], "email": user["email"], "display_name": user["display_name"]}
+    }
+@app.get("/auth/me")
+async def get_me(current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        user = db.execute("SELECT id, email, display_name FROM users WHERE id = ?",
+                         (current_user["user_id"],)).fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+    return {"id": user["id"], "email": user["email"], "display_name": user["display_name"]}
+# ─── Lesson Endpoints ─────────────────────────────────────────
+@app.post("/lessons/upload-text")
+async def upload_text_lesson(
+    title: str = Form(...),
+    content: str = Form(...),
+    current_user: dict = Depends(get_current_user),
+):
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    with get_db() as db:
+        cursor = db.execute(
+            "INSERT INTO lessons (user_id, title, raw_text) VALUES (?, ?, ?)",
+            (current_user["user_id"], title, content.strip())
+        )
+        lesson_id = cursor.lastrowid
+    return {"id": lesson_id, "title": title, "message": "Lesson created successfully"}
+@app.post("/lessons/upload-pdf")
+async def upload_pdf_lesson(
+    title: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Please upload a PDF file")
+    content_bytes = await file.read()
+    text = ""
+    try:
+        with pdfplumber.open(io.BytesIO(content_bytes)) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n\n"
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Could not extract text from PDF")
+    with get_db() as db:
+        cursor = db.execute(
+            "INSERT INTO lessons (user_id, title, raw_text) VALUES (?, ?, ?)",
+            (current_user["user_id"], title, text.strip())
+        )
+        lesson_id = cursor.lastrowid
+    return {"id": lesson_id, "title": title, "message": "PDF uploaded and processed"}
+@app.get("/lessons")
+async def get_lessons(current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        lessons = db.execute(
+            "SELECT id, title, created_at, LENGTH(raw_text) as text_length FROM lessons WHERE user_id = ? ORDER BY created_at DESC",
+            (current_user["user_id"],)
+        ).fetchall()
+        result = []
+        for lesson in lessons:
+            progress = db.execute(
+                "SELECT mode, score, completed FROM progress WHERE user_id = ? AND lesson_id = ?",
+                (current_user["user_id"], lesson["id"])
+            ).fetchall()
+            progress_dict = {p["mode"]: {"score": p["score"], "completed": p["completed"]} for p in progress}
+            result.append({
+                "id": lesson["id"],
+                "title": lesson["title"],
+                "created_at": lesson["created_at"],
+                "text_length": lesson["text_length"],
+                "progress": progress_dict,
+            })
+    return result
+@app.get("/lessons/{lesson_id}")
+async def get_lesson(lesson_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        lesson = db.execute(
+            "SELECT * FROM lessons WHERE id = ? AND user_id = ?",
+            (lesson_id, current_user["user_id"])
+        ).fetchone()
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+    return {
+        "id": lesson["id"],
+        "title": lesson["title"],
+        "raw_text": lesson["raw_text"],
+        "created_at": lesson["created_at"],
+    }
+@app.delete("/lessons/{lesson_id}")
+async def delete_lesson(lesson_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        lesson = db.execute(
+            "SELECT id FROM lessons WHERE id = ? AND user_id = ?",
+            (lesson_id, current_user["user_id"])
+        ).fetchone()
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+        db.execute("DELETE FROM progress WHERE lesson_id = ?", (lesson_id,))
+        db.execute("DELETE FROM lessons WHERE id = ?", (lesson_id,))
+    return {"message": "Lesson deleted"}
+# ─── Study Mode Endpoints ─────────────────────────────────────
+@app.get("/lessons/{lesson_id}/tutor-notes")
+async def get_tutor_notes(lesson_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        lesson = db.execute(
+            "SELECT * FROM lessons WHERE id = ? AND user_id = ?",
+            (lesson_id, current_user["user_id"])
+        ).fetchone()
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+    return generate_tutor_notes(lesson["raw_text"], lesson["title"])
+@app.get("/lessons/{lesson_id}/quiz")
+async def get_quiz(lesson_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        lesson = db.execute(
+            "SELECT * FROM lessons WHERE id = ? AND user_id = ?",
+            (lesson_id, current_user["user_id"])
+        ).fetchone()
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+    return generate_quiz(lesson["raw_text"], lesson["title"])
+@app.get("/lessons/{lesson_id}/flashcards")
+async def get_flashcards(lesson_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        lesson = db.execute(
+            "SELECT * FROM lessons WHERE id = ? AND user_id = ?",
+            (lesson_id, current_user["user_id"])
+        ).fetchone()
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+    return generate_flashcards(lesson["raw_text"], lesson["title"])
+@app.get("/lessons/{lesson_id}/mindmap")
+async def get_mindmap(lesson_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        lesson = db.execute(
+            "SELECT * FROM lessons WHERE id = ? AND user_id = ?",
+            (lesson_id, current_user["user_id"])
+        ).fetchone()
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+    return generate_mindmap(lesson["raw_text"], lesson["title"])
+# ─── Progress Endpoints ───────────────────────────────────────
+class ProgressUpdate(BaseModel):
+    mode: str
+    score: float = 0
+    completed: int = 0
+    data: str = "{}"
+@app.put("/lessons/{lesson_id}/progress")
+async def update_progress(
+    lesson_id: int,
+    progress: ProgressUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    valid_modes = {"tutor_notes", "quiz", "flashcards", "mindmap"}
+    if progress.mode not in valid_modes:
+        raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {valid_modes}")
+    with get_db() as db:
+        lesson = db.execute(
+            "SELECT id FROM lessons WHERE id = ? AND user_id = ?",
+            (lesson_id, current_user["user_id"])
+        ).fetchone()
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+        db.execute("""
+            INSERT INTO progress (user_id, lesson_id, mode, score, completed, data, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id, lesson_id, mode)
+            DO UPDATE SET score = ?, completed = ?, data = ?, updated_at = CURRENT_TIMESTAMP
+        """, (
+            current_user["user_id"], lesson_id, progress.mode,
+            progress.score, progress.completed, progress.data,
+            progress.score, progress.completed, progress.data,
+        ))
+    return {"message": "Progress updated"}
+@app.get("/lessons/{lesson_id}/progress")
+async def get_progress(lesson_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        progress = db.execute(
+            "SELECT mode, score, completed, data, updated_at FROM progress WHERE user_id = ? AND lesson_id = ?",
+            (current_user["user_id"], lesson_id)
+        ).fetchall()
+    return {p["mode"]: {
+        "score": p["score"],
+        "completed": p["completed"],
+        "data": p["data"],
+        "updated_at": p["updated_at"],
+    } for p in progress}
